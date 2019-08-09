@@ -1,43 +1,58 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Product } from './product.model';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { ObjectId } from 'bson';
+import { Model } from 'mongoose';
+import { Product, ProductDocument } from './product.model';
 
 @Injectable()
 export class ProductsService {
-  private products: Product[] = [];
+  constructor(@InjectModel('Product') private readonly model: Model<ProductDocument>) { }
 
-  one(id: string): Product {
-    const product = this.products.find(p => p.id === id);
+  async one(id: string) {
+    if (!ObjectId.isValid(id)) { throw new BadRequestException('Invalid id'); }
+
+    const product = await this.model.findById(id).exec();
 
     if (!product) { throw new NotFoundException('Product not found'); }
 
-    return { ...product };
+    return new Product(product);
   }
 
-  all(): Product[] {
-    return [...this.products];
+  async all() {
+    const products = await this.model.find().exec();
+
+    return products.map(p => new Product(p));
   }
 
-  update(id: string, product: Product) {
-    const current = this.products.find(p => p.id === id);
+  async update(id: string, product: ProductDocument) {
+    if (!ObjectId.isValid(id)) { throw new BadRequestException('Invalid id'); }
+
+    const current = await this.model.findById(id).exec();
 
     if (product.title !== undefined) { current.title = product.title; }
     if (product.description !== undefined) { current.description = product.description; }
     if (product.price !== undefined) { current.price = product.price; }
 
-    return { ...current };
+    await current.save();
+
+    return new Product(current);
   }
 
-  add(title: string, description: string, price: number) {
-    const product = new Product(title, description, price);
+  async add(title: string, description: string, price: number) {
+    const product = new this.model({ title, description, price });
 
-    this.products.push(product);
+    const result = await product.save();
 
-    return product.id;
+    return result.id as string;
   }
 
-  delete(id: string) {
-    const index = this.products.findIndex(p => p.id === id);
+  async delete(id: string) {
+    if (!ObjectId.isValid(id)) { throw new BadRequestException('Invalid id'); }
 
-    if (index !== -1) { this.products.splice(index, 1); }
+    const product = await this.model.findById(id).exec();
+
+    if (!product) { throw new NotFoundException('Product not found'); }
+
+    await product.remove();
   }
 }
